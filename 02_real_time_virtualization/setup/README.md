@@ -16,7 +16,7 @@ reproduction recipe.
 - **Linux distribution** with kernel ≥ 5.15. The lab was developed on Linux Mint 22.3
   with kernel 6.8 and 6.17, but any recent Ubuntu/Debian/Fedora/Arch works.
 - **At least 4 cores and 8 GiB of RAM.** More is better for the multi-VM experiments.
-- **Bare metal** is suggested since nested virtualization (running the KVM-backed VM in another VM) can unreliable for RT measurement without any tuning at host level.
+- **Bare metal** is suggested since nested virtualization (running the KVM-backed VM in another VM) can unreliable for RT measurement without any tuning at host level. However, in this hands-on session we still use **OpenStack VM** for just understanding real-time virtualization mechanisms provided by Linux/KVM.
 - **About 8 GiB of free disk space** for the base image plus snapshots.
 
 ### 1.1 Verify hardware virtualization
@@ -89,67 +89,7 @@ What each group is for:
 | `sshpass`                                    | simple tool to avoid writhing ssh password every time  |
 
 
-### 2.1 Start libvirtd (only needed for Exp 03 onward)
-
-```bash
-sudo systemctl enable --now libvirtd
-sudo systemctl status libvirtd       # should show "active (running)"
-```
-
-Add yourself to the `libvirt` group, then re-login or run `newgrp`:
-
-```bash
-sudo usermod -aG libvirt $USER
-newgrp libvirt     # take effect in the current shell without logging out
-```
-
----
-
-## 3. Real-time–friendly kernel command line (optional but recommended)
-
-Several experiments measure latency. The host kernel command line affects how clean
-those measurements are. For best results, edit `/etc/default/grub` and set:
-
-```
-GRUB_CMDLINE_LINUX_DEFAULT="quiet splash loglevel=3 nohz_full=1-3 isolcpus=1-3 rcu_nocbs=1-3 irqaffinity=0,4-15 processor.max_cstate=1 intel_idle.max_cstate=0 idle=poll"
-```
-
-Then `sudo update-grub` and reboot.
-
-What each option does:
-
-| Option                          | Effect                                                                                |
-| ------------------------------- | ------------------------------------------------------------------------------------- |
-| `isolcpus=1-3`                  | Remove CPUs 1, 2, 3 from the kernel's load balancer; only explicitly-pinned tasks land there |
-| `nohz_full=1-3`                 | Disable the periodic scheduler tick on CPUs 1–3 when only one task is running         |
-| `rcu_nocbs=1-3`                 | Offload RCU callbacks for CPUs 1–3 to other CPUs                                      |
-| `irqaffinity=0,4-15`            | Route IRQs away from CPUs 1–3                                                         |
-| `processor.max_cstate=1`        | Cap the generic ACPI idle driver at C1 (HLT). Used on **AMD** and as fallback on Intel. |
-| `intel_idle.max_cstate=0`       | Disable the **Intel-only** `intel_idle` driver, which ignores the ACPI cap above. On AMD this option is silently ignored, harmless. |
-| `idle=poll`                     | Spin instead of halting when idle. **Power-hungry** but lowest wake latency.          |
-
-> Three isolated CPUs are sized for this lab: Exp 05 pins to CPUs 2–3, Exp 06–08
-> use CPU 1, and Exp 07/08 also use CPU 2 or 3 for a noisy neighbor. On a 16-thread
-> machine, 3 isolated cores leave 13 for normal work.
-
-> Adjust the CPU numbers if your machine has a different topology, e.g. on an
-> 8-core CPU you might use `isolcpus=1-3` still, or trim to `1-2`. On a P-core/E-core
-> hybrid, prefer isolating P-cores.
-
-> **`idle=poll` keeps the isolated CPUs at 100 % utilization in `top` by design.**
-> It is not a bug. Comment it out if you care about battery life and can accept
-> ~1–10 µs of additional wake-up latency.
-
-Verify after reboot:
-
-```bash
-cat /proc/cmdline
-cat /sys/devices/system/cpu/isolated   # should print '1-3'
-```
-
----
-
-## 4. Build the demo guest image
+## 3. Build the demo guest image
 
 A single small Debian 12 image, baked once with cloud-init, used in **snapshot mode**
 by every experiment so it never gets modified.
@@ -180,7 +120,7 @@ Every boot is a fresh, identical guest; no state leaks between experiments.
 
 ---
 
-## 5. Verify the setup
+## 4. Verify the setup
 
 A quick smoke test:
 
@@ -203,7 +143,7 @@ ps -L -p "$(pgrep -nf 'name vm1')" -o pid,tid,psr,comm | head
 ```
 
 If you see the `CPU N/KVM` thread names, everything is in place. Now go to
-[`../01-first-vm-kvm-vs-tcg/`](../01-first-vm-kvm-vs-tcg/) and start.
+[experiment 01](../01-first-vm-kvm-vs-tcg/README.md) and start.
 
 ---
 

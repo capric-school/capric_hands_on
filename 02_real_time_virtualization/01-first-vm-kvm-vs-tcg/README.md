@@ -1,239 +1,258 @@
-# Experiment 01 — First VM with KVM (and the cost of pure emulation)
+# Experiment 01. KVM versus TCG: comparing execution time
 
-**Goal:** Boot the same guest image once with KVM and once with pure QEMU
-emulation (TCG), and note the difference in boot time, host CPU
-usage, and what `lsmod` reveals about the moving parts.
-**Prerequisites:** Setup complete; `~/kvm-demo/debian-base.qcow2` exists. See
-[`../setup/README.md`](../setup/README.md).
+## Goal
 
----
+Compare the elapsed time required to execute the same fixed CPU workload in a guest using **KVM hardware acceleration** and **QEMU TCG software emulation**.
+
+Perform this experiment **before the CPU affinity and isolation experiments**. Use a vanilla host kernel command line, no CPU pinning, and no background stress. Run the two guests sequentially.
 
 ## What this experiment demonstrates
 
-Three concepts from the lesson:
+With KVM, guest instructions execute directly on the processor using hardware virtualization. With TCG, QEMU translates guest code into host instructions and caches translated blocks for reuse.
 
-1. **KVM is a kernel module + a character device.** It is not a separate
-   "hypervisor process"; it lives inside your running Linux kernel.
-2. **QEMU is the user-space partner.** It is the process you launch; it talks
-   to KVM through `/dev/kvm` via `ioctl`.
-3. **The split matters in practice.** With KVM, guest instructions run
-   natively on the CPU (using Intel VT-x or AMD-V). Without KVM, QEMU falls
-   back to dynamic binary translation (TCG); the same image still boots, but
-   every guest instruction is translated to host instructions by QEMU. You'll
-   see the cost directly.
+Both modes may consume approximately one full CPU while running a single-threaded workload. The useful comparison is **time to complete the same work**, not merely instantaneous CPU utilization.
 
----
+This lab measures a Python integer workload. It is not a comprehensive benchmark of virtualization, networking, storage, or real-time behavior.
 
-## Step 1 — Boot the VM with KVM
+## Environment and prerequisites
+
+In the OpenStack setup:
+
+- **L0:** the physical OpenStack compute host.
+- **L1:** your Ubuntu OpenStack instance, where QEMU runs.
+- **L2:** the Debian guest, where the benchmark runs.
+
+On bare metal, the same commands apply: run L1-labeled commands on the Linux machine hosting QEMU.
+
+Requirements:
+
+- QEMU installed and KVM usable by your account.
+- On OpenStack, nested virtualization enabled.
+- The lab guest image at `~/kvm-demo/debian-base.qcow2`.
+- Python 3 inside the guest, or Internet access to install it.
+- No other lab VM listening on L1 TCP port 2222.
+
+Inside **L1**, check:
 
 ```bash
-time ../scripts/vm1.sh
+cat /proc/cmdline
+cat /sys/devices/system/cpu/isolated
+test -r /dev/kvm && test -w /dev/kvm && echo 'KVM device accessible'
+test -f "$HOME/kvm-demo/debian-base.qcow2" && echo 'Guest image found'
+qemu-system-x86_64 --version
 ```
 
-**What this does.** Runs `qemu-system-x86_64` with `-enable-kvm -cpu host` and
-the rest of the demo flags. The relevant short version is:
+The command line should have no lab isolation options (`isolcpus`, `nohz_full`, `rcu_nocbs`, or custom `irqaffinity`), and the isolated CPU list should be empty. Finish any previous stress runs before starting. Do not use `taskset` or `chrt` in this experiment.
 
+## Controlled settings
+
+| Setting | KVM run | TCG run |
+| --- | --- | --- |
+| Accelerator | `kvm` | `tcg` |
+| CPU model | `qemu64` | `qemu64` |
+| Guest vCPUs | 1 | 1 |
+| Guest memory | 1 GiB | 1 GiB |
+| Disk image and disk interface | Same image, virtio | Same image, virtio |
+| Network device | virtio | virtio |
+| CPU affinity | Unpinned | Unpinned |
+| Background stress | None | None |
+| Workload | Same Python script | Same Python script |
+
+`qemu64` is an explicit common CPU model suitable for this basic workload. It reduces CPU-feature differences compared with using `host` for KVM and `max` for TCG. It is not a claim that every exposed CPU detail or implementation is identical.
+
+## Step 1 — Boot with KVM
+
+Run in **L1 terminal A**:
+
+```bash
+qemu-system-x86_64 \
+  -accel kvm -cpu qemu64 -smp 1 -m 1G \
+  -drive file="$HOME/kvm-demo/debian-base.qcow2",if=virtio,snapshot=on \
+  -netdev user,id=n0,hostfwd=tcp:127.0.0.1:2222-:22 \
+  -device virtio-net-pci,netdev=n0 \
+  -nographic \
+  -name accel-demo,debug-threads=on
 ```
-qemu-system-x86_64 -enable-kvm -cpu host -smp 2 -m 1G \
-    -drive file=~/kvm-demo/debian-base.qcow2,if=virtio,snapshot=on \
-    -netdev user,id=n0,hostfwd=tcp::2222-:22 -device virtio-net,netdev=n0 \
-    -nographic -serial mon:stdio -name vm1,debug-threads=on
+
+Log in at the guest console as `root` with password `demo`, unless you changed the lab credentials. Alternatively, connect from another L1 terminal:
+
+```bash
+ssh -p 2222 root@127.0.0.1
 ```
 
-`time` wraps the whole thing so you can see how long the boot took once you
-exit. Keep the terminal in view while booting; the Debian boot messages
-should scroll by quickly.
+Wait for startup activity to settle before measuring. If KVM initialization fails, fix KVM availability or permissions; do not silently fall back to TCG for this run.
 
-**Expected output (boot phase):**
+## Step 2 — Prepare the fixed workload inside L2
 
+Run **inside L2**:
+
+```bash
+command -v python3 || {
+  apt-get update
+  apt-get install -y python3
+}
+
+python3 --version
+uname -r
 ```
-[    0.000000] Linux version 6.1.0-... (debian-kernel@lists.debian.org)
-[    0.000000] Command line: BOOT_IMAGE=...
-...
-Debian GNU/Linux 12 guest ttyS0
-guest login:
+
+Use the same Python version in both modes. Complete package installation before timing.
+
+Create the benchmark:
+
+```bash
+cat > /tmp/cpu-bench.py <<'PY'
+import statistics
+import time
+
+N = 100_000
+
+def workload():
+    value = 1
+    for i in range(N):
+        value = (value * 1664525 + i + 1013904223) & 0xffffffff
+    return value
+
+print(f"Iterations per run: {N}", flush=True)
+print("Warm-up...", flush=True)
+workload()
+
+times = []
+for run in range(1, 6):
+    start = time.perf_counter()
+    checksum = workload()
+    elapsed = time.perf_counter() - start
+    times.append(elapsed)
+    print(
+        f"run={run} elapsed_s={elapsed:.6f} checksum={checksum}",
+        flush=True,
+    )
+
+print(f"median_s={statistics.median(times):.6f}", flush=True)
+PY
 ```
 
-You should reach the login prompt in roughly **10–20 seconds**.
+The benchmark executes a fixed number of integer operations, with values bounded to 32 bits, through the Python interpreter. It performs one untimed warm-up and five timed runs. Warm-up reduces initial execution effects, including initial TCG translation in the later run, but does not remove all runtime variability.
 
-**What to look for.**
+Each `elapsed_s` is elapsed time measured inside the guest, including delays while its execution is interrupted or descheduled. It excludes boot, installation, the warm-up, and printing the result.
 
-- Log in as `root` / `demo`.
-- In another terminal (don't close this one):
+## Step 3 — Measure KVM and retain the output
 
-  ```bash
-  top -bn1 -p "$(pgrep -nf 'name vm1')"
-  ```
+You can run the benchmark directly **inside L2**:
 
-  The QEMU process is using **modest CPU**, typically a few percent on idle,
-  a brief spike during boot. The host kernel is doing most of the work via
-  KVM, and the host CPU is running guest instructions natively.
+```bash
+python3 /tmp/cpu-bench.py
+```
 
-Now power off cleanly from inside the guest:
+For convenient persistent logging, instead run it through SSH from **L1 terminal B**:
+
+```bash
+mkdir -p "$HOME/kvm-tcg-results"
+set -o pipefail
+ssh -p 2222 root@127.0.0.1 'python3 /tmp/cpu-bench.py' \
+  2>&1 | tee "$HOME/kvm-tcg-results/kvm-1.txt"
+```
+
+Choose either method for the measurement; do not run both simultaneously. With SSH, the script still executes in L2, but the output file is saved in L1.
+
+Record the five elapsed times, median, and checksums. Then shut down **inside L2**:
 
 ```bash
 poweroff
 ```
 
-You'll see the `time` summary line, something like:
+Wait for QEMU to exit before starting the TCG guest.
 
-```
-real    0m15.123s
-user    0m2.456s
-sys     0m1.789s
-```
+> The disk uses `snapshot=on`: guest filesystem changes are discarded when QEMU exits. The script and newly installed packages may need to be recreated after each launch. Logs saved in L1 remain available.
 
----
+## Step 4 — Boot with TCG
 
-## Step 2 — Boot the same image without KVM (pure TCG emulation)
+Run in **L1 terminal A**. Only the accelerator changes:
 
 ```bash
-time qemu-system-x86_64 \
-    -accel tcg -cpu max -smp 2 -m 1G \
-    -drive file=$HOME/kvm-demo/debian-base.qcow2,if=virtio,snapshot=on \
-    -nographic -serial mon:stdio
+qemu-system-x86_64 \
+  -accel tcg -cpu qemu64 -smp 1 -m 1G \
+  -drive file="$HOME/kvm-demo/debian-base.qcow2",if=virtio,snapshot=on \
+  -netdev user,id=n0,hostfwd=tcp:127.0.0.1:2222-:22 \
+  -device virtio-net-pci,netdev=n0 \
+  -nographic \
+  -name accel-demo,debug-threads=on
 ```
-Alternatively you can use the script provided in this folder:
-```bash
-./vm1-tcg.sh
-```
 
-**What this does.** Same image, same VM size, but the `-accel tcg` flag forces
-QEMU to use its **Tiny Code Generator**, the dynamic binary translator the
-slides described. Every guest instruction is now translated into host
-instructions by QEMU itself, in user-space, with no hardware help. `-cpu max`
-gives the guest as rich a virtual CPU as TCG can emulate (without it, you
-get a generic `qemu64` CPU).
+Boot may take longer. Do not prescribe a fixed boot-time ratio: it depends on the environment and guest startup work.
 
-**Expected output.**
+Inside L2, repeat **Step 2 exactly**, including recreating the script. Allow startup and installation activity to settle.
 
-The same Debian boot, but **much slower**. Where KVM reached the login prompt
-in ~15 seconds, TCG typically takes **2–10× longer**, depending on CPU.
-
-**What to look for.**
-
-While it's booting, run `top` on the host:
+Run the measurement directly in L2, or capture it from **L1 terminal B**:
 
 ```bash
-top -bn1 -p "$(pgrep -n qemu-system-x86)"
+set -o pipefail
+ssh -p 2222 root@127.0.0.1 'python3 /tmp/cpu-bench.py' \
+  2>&1 | tee "$HOME/kvm-tcg-results/tcg-1.txt"
 ```
 
-The QEMU process is using **close to 100% of one CPU**, sometimes more if
-multiple guest cores are active. **This is the cost of dynamic translation.**
-Every guest basic block gets translated to host instructions and cached in
-QEMU's translation cache (32 MB by default);
-re-executions of the same block hit the cache, but the first execution and
-every cache eviction pay full translation cost.
-
-When you've seen enough, log in (eventually) and `poweroff`, or hit
-**Ctrl-A then X** to terminate QEMU forcefully.
-
----
-
-## Step 3 — Look at what KVM physically *is*
-
-While no VM is running (or with vm1 running again, your choice):
+Record the output, then shut down inside L2:
 
 ```bash
-ls -l /dev/kvm
-lsmod | grep kvm
-cat /sys/module/kvm/version 2>/dev/null || echo "(version file not exported on this kernel)"
+poweroff
 ```
 
-**What this does.** Inspects the kernel-side surface of KVM.
+## Step 5 — Compare the results
 
-**Expected output:**
+| Measurement | KVM | TCG |
+| --- | ---: | ---: |
+| Run 1 elapsed time (s) | | |
+| Run 2 elapsed time (s) | | |
+| Run 3 elapsed time (s) | | |
+| Run 4 elapsed time (s) | | |
+| Run 5 elapsed time (s) | | |
+| Median elapsed time (s) | | |
+| Checksum | | |
 
-```
-crw-rw---- 1 root kvm 10, 232 May 12 13:25 /dev/kvm
-kvm_amd               212992  0
-kvm                  1331200  1 kvm_amd
-ccp                   147456  1 kvm_amd
-```
+The checksum should match across every run and both modes. Calculate:
 
-(or `kvm_intel` instead of `kvm_amd` on Intel hardware.)
-
-**What to look for.**
-
-- **`/dev/kvm`** is a character device (`c` in the first column), group `kvm`,
-  mode `0660`. This is the "userspace entry point" the slides referred to. It
-  is the file descriptor through which QEMU asks KVM "make me a VM," "create
-  a vCPU," "run that vCPU," etc.
-- **Two modules**: the generic `kvm` module (architecture-independent core)
-  and the architecture-specific module `kvm_amd` (or `kvm_intel`). This is
-  exactly the split the slides described:
-    - `kvm.ko`: the **kernel module** that implements vCPU and MMU, exposing
-      `/dev/kvm`.
-    - `kvm-amd.ko` / `kvm-intel.ko`: the **arch-specific module** that knows
-      how to talk to AMD-V / VT-x.
-- The user-space side (the **QEMU process**) was what you ran in Steps 1 and
-  2. It's the third piece of the slide's three-piece architecture.
-
----
-
-## Summary — what you should have observed
-
-- A VM is launched with a single `qemu-system-x86_64` command. There is no
-  "hypervisor service" running in the background.
-- With `-enable-kvm`, guest instructions execute natively on the host CPU
-  via Intel VT-x / AMD-V. The QEMU process consumes little host CPU.
-- Without KVM (`-accel tcg`), QEMU translates every guest basic block to host
-  code in user-space. The same boot takes much longer; the QEMU process
-  consumes ~100 % of a host CPU during heavy guest activity.
-- The three components from the slide are concretely visible:
-    - `kvm` and `kvm_amd`/`kvm_intel` kernel modules → in `lsmod`.
-    - The `/dev/kvm` character device → in `ls -l /dev/kvm`.
-    - The QEMU user-space process → in `ps aux | grep qemu`.
-
----
-
-## Things to note
-
-- The flag is `-enable-kvm` (long form) or `-accel kvm` (newer form, both
-  work). Some distributions ship `qemu-kvm` as an alias that has it on by
-  default; on Debian/Mint it's not aliased, so we set it explicitly.
-- `-cpu host` exposes the host's full CPU model to the guest, which is the
-  best performance choice when migration to a different CPU is not required.
-  Alternatives are `-cpu qemu64` (a small portable subset) or named models
-  like `-cpu Skylake-Server`.
-- `-snapshot` is doing real work: the on-disk `debian-base.qcow2` is opened
-  read-only and writes go to an in-memory overlay that is discarded on exit.
-  Run multiple boots in parallel without worrying about disk corruption.
-- The `time` command measures the entire lifespan of the process, meaning your human reaction time and the time you spend logged in get mixed into the results. You can use the command ` systemd-analyze` to print a precise summary of the boot time:
-
-```
-root@guest:~# systemd-analyze # using KVM
-Startup finished in 1.794s (kernel) + 1.829s (userspace) = 3.624s 
-graphical.target reached after 1.790s in userspace.
-
-root@guest:~# systemd-analyze # using TCG
-Startup finished in 4.878s (kernel) + 7.620s (userspace) = 12.499s 
-graphical.target reached after 7.479s in userspace.
+```text
+TCG slowdown = median TCG elapsed time / median KVM elapsed time
 ```
 
-## Cleanup
+For example, **hypothetical** medians of 12 seconds with TCG and 3 seconds with KVM give a slowdown of 4: TCG takes four times as long for this workload.
 
-If a VM is still running, either:
+Expect KVM to generally complete CPU-intensive work faster, but report measured values rather than a predefined ratio. Keep the iteration count identical. If you change it to adjust classroom duration, rerun both modes.
+
+For a stronger comparison, repeat complete sessions in alternating order (KVM, TCG, KVM, TCG), using distinct filenames such as `kvm-2.txt` and `tcg-2.txt`. Five runs within one session do not capture all between-session variability.
+
+## Optional observation — QEMU CPU usage
+
+While the guest benchmark is running, in another **L1 terminal**:
 
 ```bash
-poweroff       # from inside the guest
+PID=$(pgrep -n -f 'qemu-system-x86_64.*accel-demo')
+ps -T -p "$PID" -o tid,psr,comm
+top -H -p "$PID"
 ```
 
-or from the host:
+Refresh `PID` after every QEMU launch. Typical vCPU thread names include `CPU 0/KVM` and `CPU 0/TCG`.
 
-```bash
-pkill -f 'name vm1'
-```
+Observe several updates. Both modes may show a busy vCPU thread: direct guest execution under KVM still consumes CPU time associated with the vCPU thread. Low usage at guest idle is not evidence that KVM execution is unaccounted for.
 
-To exit QEMU when the guest is hung: **Ctrl-A then X**.
+Use this as a separate observation, or monitor both modes consistently. Press `q` to exit top.
 
----
+## Interpretation and limitations
 
-## Going further
+- The result describes this Python workload, CPU model, QEMU version, and environment; it is not a universal KVM/TCG performance ratio.
+- CPU affinity is intentionally unrestricted. The scheduler may move execution between CPUs, and unrelated tasks can interfere.
+- In OpenStack, this is **nested KVM versus TCG inside L1**. Physical-host scheduling, oversubscription, and other tenants can affect the results.
+- The common CPU model reduces feature differences, but does not make all execution characteristics identical.
+- These elapsed times measure workload completion, not wake-up latency, deadline guarantees, or boot duration.
 
-- Run `qemu-system-x86_64 --help | head -40` and skim the accelerator section.
-  Besides `kvm` and `tcg`, you'll see `xen`, `hax`, `whpx`, `nvmm`, `hvf`:
-  these are the analogous mechanisms on other hypervisors / operating systems.
-- For an even more dramatic TCG-vs-KVM comparison, try a CPU-intensive
-  benchmark inside the guest, e.g. `openssl speed` or `stress-ng --cpu 2`.
-  TCG will be a *lot* slower than KVM on these.
+## Connection to the next experiment
+
+This experiment changes the execution mechanism: KVM versus TCG.
+
+Next ([experiment 02](../02-compare-vanilla-vs-full-isolation/README.md)), keep KVM enabled and introduce CPU affinity, background stress, and the vanilla-versus-isolation comparison. Affinity controls **where a thread may execute**. CPU isolation reduces normal background scheduling on selected CPUs. Neither, by itself, guarantees that an OpenStack instance receives uninterrupted physical CPU time.
+
+## References
+
+- [QEMU accelerator and CPU options](https://qemu-project.gitlab.io/qemu/system/invocation.html)
+- [QEMU TCG translator internals](https://www.qemu.org/docs/master/devel/tcg.html)
+- [Bash timing semantics](https://www.gnu.org/software/bash/manual/html_node/Pipelines.html)
