@@ -155,3 +155,6 @@ Example command line:
 ```
 ssh -i ~/Downloads/my_key -l ubuntu <ip>
 ```
+
+If SSH shows a warning like this ``Permissions 0644 for 'my_key.pem' are too open.``you should execute something like ``chmod 0600 my_key.pem`` to set the key less open.
+
