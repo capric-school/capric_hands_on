@@ -51,8 +51,7 @@ where:
 
 You may add the ```-H 100 --histfile=LOG.log``` option to output histogram data in a file Log.log, and to set the latency histogram size to 100 microseconds. Latencies over 100µs are counted in an overflow bin.
 
-More info available at:
-https://documentation.ubuntu.com/real-time/latest/how-to/measure-maximum-latency/
+More info available at: 
 https://wiki.linuxfoundation.org/realtime/documentation/howto/tools/cyclictest/start
 
 
