@@ -114,9 +114,9 @@ We'll go through the tabs you need to look at here:
 
 - Source
   - Select Boot Source
-    - Usually image, unless you've had a VM running before and you want to attach an old Volume to it.
+    - Usually image, unless you've had a VM running before and you want to attach an old Volume to it. 
     - Set the size of the Volume
-    - Select a source image for this VM
+    - Select a source image for this VM. **In this lab, choose the Ubuntu-24.04 image**.
 
 - Flavor
   - Flavor is the size of the VM, as in memory and CPUs. We have a naming convention where c = cores and m = memory in GB; select one that seems to fit
