@@ -4,7 +4,7 @@
 
 In a cyber physical cloud environment, it is very likely that some Linux host or VM will need to execute tasks with real-time constraints.
 
-In this lab you will learn:
+In this lab, you will learn:
 - how to test the *latency* of your host
 - how to schedule applications with Linux built-in *real-time schedulers*
 - how to *fully isolate* a CPU to protect its workload from *noisy neighbors*
@@ -12,7 +12,7 @@ In this lab you will learn:
 
 ### 0. Prerequisites
 This lab activity requires a Linux host.
-You can use your own Linux machine, or local VM, or you can create a VM on the Ericsson Openstack environment, following the tutorial:
+You can use your own Linux machine, a local VM, or you can create a VM on the Ericsson OpenStack environment, following the tutorial:
 
 https://github.com/capric-school/capric_hands_on/tree/main/00_openstack_vm
 
@@ -28,7 +28,7 @@ and rt-app with:
 sudo apt install rt-app
 ```
 
-For stress workload, install the stress-ng tool with:
+For stress workloads, install the stress-ng tool with:
 
 ```
 sudo apt install stress-ng
@@ -71,19 +71,19 @@ where the options can be:
 - -o, --other: sets the SCHED_OTHER policy
 - -r, --rr: sets the SCHED_RR policy
 - -f, --fifo: sets the SCHED_FIFO policy
-- -d, --deadline: sets the SCHED_DEADLINE policy. In this case, the priority argument must be 0 and the following arguments can be addedd:
+- -d, --deadline: sets the SCHED_DEADLINE policy. In this case, the priority argument must be 0 and the following arguments can be added:
     - -T--sched-runtime *nanoseconds* to set the runtime
     - -P, --sched-period *nanoseconds* to set the period
     - -D, --sched-deadline *nanoseconds* to set the deadline
 
 We prepared a simple latency test code in the source file ```latency_test.c```.
-Download, compile and try to schedule it with real-time schedulers as follows.
+Download, compile, and try to schedule it with real-time schedulers as follows.
 
 Compile with gcc:
 ```
-$ gcc -o latency latency_test.c 
+gcc -o latency latency_test.c 
 ```
-Test with deafult scheduling (SCHED_OTHER):
+Test with default scheduling (SCHED_OTHER):
 ```
 $ ./latency 
 Latencies: Min:      96 Act:    1157    Avg:957.210000	Max:    1849
@@ -110,9 +110,9 @@ Latencies: Min:      19 Act:    1084    Avg:838.660000	Max:    1301
 While the test is running, you can check the scheduling policy with the command ```ps -eLfc``` from a second terminal.
 
 You can also run cyclictest with SCHED_FIFO by adding the ```--priority=90``` option, where 90 is the priority level.
-In the rt-tests suite you can also find specific utilies for testing SCHED_DEADLINE, such as ```cyclicdeadline``` and ```deadline_test```.
+In the rt-tests suite, you can also find specific utilities for testing SCHED_DEADLINE, such as ```cyclicdeadline``` and ```deadline_test```.
 
-You can also try rt-app (https://github.com/scheduler-tools/rt-app), after confguring a workload through in a json file. An example of workload can be foun in ```test_realtime.json```, and can be used as follow:
+You can also try rt-app (https://github.com/scheduler-tools/rt-app), after configuring a workload in a json file. An example of workload can be foun in ```test_realtime.json```, and can be used as follow:
 
 ```
 sudo rt-app test_realtime.json
@@ -123,15 +123,15 @@ To answer, try to repeat the tests by running a stress workload in parallel (fro
 ```
 $ sudo stress-ng --cyclic 1 --cyclic-dist 250 --cyclic-method clock_ns --cyclic-policy rr -t 3600 --log-file cyclic-stress.log --verbose
 ```
-Note that the above command will run the stress-ng for 1 hour, and will log the results in the file ```cyclic-stress.log```. The ```--cyclic-dist``` option specifies the distribution of the sleep times, and the ```--cyclic-method``` option specifies the method to use for the cyclic stress. The ```--cyclic-policy``` option specifies the scheduling policy to use for the cyclic stress.
+Note that the above command will run stress-ng for 1 hour, and will log the results in the file ```cyclic-stress.log```. The ```--cyclic-dist``` option specifies the distribution of the sleep times, and the ```--cyclic-method``` option specifies the method to use for the cyclic stress. The ```--cyclic-policy``` option specifies the scheduling policy to use for the cyclic stress.
 
 ### 3. Configure a CPU to be used in full isolation
 Using Linux boot parameters, it is possible to *fully isolate* one or more CPUs from the scheduler and kernel noise. This helps to run a group of critical tasks in isolation.
 
 Edit the ```/etc/default/grub``` or ```sudo vi /etc/default/grub.d/50-cloudimg-settings.cfg``` (in case of OS cloud images as in OpenStack) file and add the following options to the ```GRUB_CMDLINE_LINUX_DEFAULT```:
 - **isolcpus=X,Y**: The isolcpus kernel option can be used to specify a set of CPUs (e.g., X and Y) to be isolated from scheduler choices;
-- **nohz_full=X,Y**: Kernel needs to do to maintain its internal state and services, and tick-based service generates noise for latency sensitive workloads. The nohz_full option enables tickless mode for the indicated CPUs (e.g., X and Y);
-- **rcu_nocbs=X,Y**: RCU callbacks are invoked in softirq context. These callbacks often free memory, and the memory allocators can therefore impose large latencies. With the rcu_nocbs option we can tell the kernel to not select the indicated CPUs (e.g., X and Y) for RCU callbacks;
+- **nohz_full=X,Y**: Kernel needs to do work to maintain its internal state and services, and tick-based service generates noise for latency sensitive workloads. The nohz_full option enables tickless mode for the indicated CPUs (e.g., X and Y);
+- **rcu_nocbs=X,Y**: RCU callbacks are invoked in softirq context. These callbacks often free memory, and the memory allocators can therefore impose large latencies. With the rcu_nocbs option, we can tell the kernel not to select the indicated CPUs (e.g., X and Y) for RCU callbacks;
 - **irqaffinity=X,Y**: this option is used to tell the kernel to run interrupt handlers on specific CPUs, e.g., X and Y.  So, we must not indicate the CPUs that we want to isolate.
 
 If you created a VM with 4 CPUs, try to isolate CPU 1 with the following configuration to add to ```GRUB_CMDLINE_LINUX_DEFAULT```:
@@ -142,11 +142,11 @@ Then, run:
 ```
 sudo update-grub
 ```
-and reboot the machine. When ready, run the followiong command to verify that the isolation has been set:
+and reboot the machine. When ready, run the following command to verify that the isolation has been set:
 ```
 cat /proc/cmdline
 ```
-and repeat the latency tests by setting the affinity of the workload to be run on isolated CPU with the ```taskset``` utility:
+and repeat the latency tests by setting the affinity of the workload to be run on the isolated CPU with the ```taskset``` utility:
 ```
 sudo taskset -c 1 cyclictest --mlockall --priority=90 --threads=1 --affinity=1 --interval=5000 --duration 1m
 ```
@@ -155,7 +155,7 @@ The above command will run cyclictest on the isolated core 1.
 
 
 ### 4. Enable PREEMPT_RT
-The main aim of the PREEMPT_RT patch is to minimize the amount of kernel code that is non-preemptible. Therefore several substitution mechanisms and new mechanisms are implemented to avoid unexpected long latencies for time critical tasks, eliminating (almost) all non-preemptible kernel sections.
+The main aim of the PREEMPT_RT patch is to minimize the amount of kernel code that is non-preemptible. Therefore, several substitution mechanisms and new mechanisms are implemented to avoid unexpected long latencies for time critical tasks, eliminating (almost) all non-preemptible kernel sections.
 
 Since kernel version 6.12, PREEMPT_RT is part of the mainline kernel and only needs to be enabled as the preemption mode (with the CONFIG_PREEMPT_RT option).
 
