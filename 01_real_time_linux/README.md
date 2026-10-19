@@ -8,7 +8,7 @@ In this lab you will learn:
 - how to test the *latency* of your host
 - how to schedule applications with Linux built-in *real-time schedulers*
 - how to *fully isolate* a CPU to protect its workload from *noisy neighbors*
-- (OTIONAL) and how to reduce the latency of time-critical applications by enabling the *PREEMPT_RT fully preemptible* kernel configuration
+- and how to reduce the latency of time-critical applications by enabling the *PREEMPT_RT fully preemptible* kernel configuration
 
 ### 0. Prerequisites
 This lab activity requires a Linux host.
@@ -20,6 +20,18 @@ To run real-time benchmarks on your host, install the rt-test utilities with:
 
 ```
 sudo apt install rt-tests
+```
+
+and rt-app with:
+
+```
+sudo apt install rt-app
+```
+
+For stress workload, install the stress-ng tool with:
+
+```
+sudo apt install stress-ng
 ```
 
 ### 1. Run cyclictest to measure system latency
@@ -48,7 +60,7 @@ https://wiki.linuxfoundation.org/realtime/documentation/howto/tools/cyclictest/s
 Linux includes different scheduling classes. SCHED_OTHER is the default time sharing policy for general purpose tasks. 
 The following *real-time scheduling* policies are available:
 - **SCHED_FIFO**: fixed priority preemptive scheduling, with 99 priority levels available, from 1 (lowest) to 99 (highest). Tasks with the same priority run until completion, and are scheduled in fifo order. It can be used to perform rate monotonic scheduling of periodic tasks. 
-- **SCHED_RR**: like SCHED_FIFO, but with a time slice defined to alternate tasks with the same priority using a configurable time quantum
+- **SCHED_RR**: like SCHED_FIFO, but with a time slice defined to alternate tasks with the same priority using a configurable time quantum.
 - **SCHED_DEADLINE**: Earliest Deadline First scheduling of sporadic/periodic tasks and with a runtime budget control using the constant bandwidth server policy. Every task can run up to a given "sched-runtime" every "sched-period" and it is scheduled according to its "sched-deadline" parameter.
 
 To change the scheduling policy for a task, the following command can be used:
@@ -97,13 +109,18 @@ Latencies: Min:      19 Act:    1084    Avg:838.660000	Max:    1301
 ```
 While the test is running, you can check the scheduling policy with the command ```ps -eLfc``` from a second terminal.
 
-You can also run cyclictest with SCHED_FIFO by adding the ```--priority=80``` option, where 80 is the priority level.
+You can also run cyclictest with SCHED_FIFO by adding the ```--priority=90``` option, where 90 is the priority level.
 In the rt-tests suite you can also find specific utilies for testing SCHED_DEADLINE, such as ```cyclicdeadline``` and ```deadline_test```.
+
+You can also try rt-app (https://github.com/scheduler-tools/rt-app), after confguring a workload through in a json file. An example of workload can be foun in ```test_realtime.json```, and can be used as follow:
+
+```
+sudo rt-app test_realtime.json
+```
 
 **Do real-time schedulers help to keep latencies low, also in case of stress?**
 To answer, try to repeat the tests by running a stress workload in parallel (from a different terminal):
 ```
-$ sudo apt install stress-ng
 $ sudo stress-ng --cyclic 1 --cyclic-dist 250 --cyclic-method clock_ns --cyclic-policy rr -t 3600 --log-file cyclic-stress.log --verbose
 ```
 Note that the above command will run the stress-ng for 1 hour, and will log the results in the file cyclic-stress.log. The --cyclic-dist option specifies the distribution of the sleep times, and the --cyclic-method option specifies the method to use for the cyclic stress. The --cyclic-policy option specifies the scheduling policy to use for the cyclic stress.
@@ -111,13 +128,13 @@ Note that the above command will run the stress-ng for 1 hour, and will log the 
 ### 3. Configure a CPU to be used in full isolation
 Using Linux boot parameters, it is possible to *fully isolate* one or more CPUs from the scheduler and kernel noise. This helps to run a group of critical tasks in isolation.
 
-Edit the ```/etc/config/grub```, ```/etc/default/grub``` or ```sudo vi /etc/default/grub.d/50-cloudimg-settings.cfg``` file and add the following options to the ```GRUB_CMDLINE_LINUX_DEFAULT```:
+Edit the ```/etc/default/grub``` or ```sudo vi /etc/default/grub.d/50-cloudimg-settings.cfg``` (in case of OS cloud images as in OpenStack) file and add the following options to the ```GRUB_CMDLINE_LINUX_DEFAULT```:
 - **isolcpus=X,Y**: The isolcpus kernel option can be used to specify a set of CPUs (e.g., X and Y) to be isolated from scheduler choices;
 - **nohz_full=X,Y**: Kernel needs to do to maintain its internal state and services, and tick-based service generates noise for latency sensitive workloads. The nohz_full option enables tickless mode for the indicated CPUs (e.g., X and Y);
 - **rcu_nocbs=X,Y**: RCU callbacks are invoked in softirq context. These callbacks often free memory, and the memory allocators can therefore impose large latencies. With the rcu_nocbs option we can tell the kernel to not select the indicated CPUs (e.g., X and Y) for RCU callbacks;
 - **irqaffinity=X,Y**: this option is used to tell the kernel to run interrupt handlers on specific CPUs, e.g., X and Y.  So, we must not indicate the CPUs that we want to isolate.
 
-If you created a VM with 4 CPUs, Try to isolate CPU 1 with the following configuration to add to ```GRUB_CMDLINE_LINUX_DEFAULT```:
+If you created a VM with 4 CPUs, try to isolate CPU 1 with the following configuration to add to ```GRUB_CMDLINE_LINUX_DEFAULT```:
 ```
 isolcpus=1 nohz_full=1 rcu_nocbs=1 irqaffinity=0,2-3
 ```
@@ -137,7 +154,7 @@ The above command will run cyclictest on the isolated core 1.
 
 
 
-### 4. Enable PREEMPT_RT (OPTIONAL)
+### 4. Enable PREEMPT_RT
 The main aim of the PREEMPT_RT patch is to minimize the amount of kernel code that is non-preemptible. Therefore several substitution mechanisms and new mechanisms are implemented to avoid unexpected long latencies for time critical tasks, eliminating (almost) all non-preemptible kernel sections.
 
 Since kernel version 6.12, PREEMPT_RT is part of the mainline kernel and only needs to be enabled as the preemption mode (with the CONFIG_PREEMPT_RT option).
