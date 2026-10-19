@@ -226,9 +226,33 @@ For a stronger comparison, repeat complete sessions in alternating order (KVM, T
 While the guest benchmark is running, in another **L1 terminal**:
 
 ```bash
-PID=$(pgrep -n -f 'qemu-system-x86_64.*accel-demo')
-ps -T -p "$PID" -o tid,psr,comm
-top -H -p "$PID"
+$ PID=$(pgrep -n -f 'qemu-system-x86_64.*accel-demo')
+$ ps -T -p "$PID" -o tid,psr,comm
+ TID PSR COMMAND
+ 117177   6 qemu-system-x86
+ 117178   6 qemu-system-x86
+ 117179   7 worker
+ 117181   6 CPU 0/KVM
+ 117183   4 kvm-nx-lpage-re
+ 117185   7 worker
+ 117186   0 worker
+ 117187   1 worker
+ 117188   3 worker
+ 117189   4 worker
+ 117190   1 worker
+ 117191   1 worker
+ 117192   4 worker
+ 117193   5 worker
+ 117194   6 worker
+ 117195   2 worker
+ 117196   6 worker
+ 117197   3 worker
+```
+
+Note that QEMU ``worker`` normally identifies a thread in QEMU’s background thread pool, commonly used to perform blocking disk/file operations without blocking QEMU’s main event loop.
+
+```
+$ top -H -p "$PID"
 ```
 
 Refresh `PID` after every QEMU launch. Typical vCPU thread names include `CPU 0/KVM` and `CPU 0/TCG`.
