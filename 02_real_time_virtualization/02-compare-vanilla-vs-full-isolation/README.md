@@ -1,6 +1,6 @@
 # Experiment 02. Comparing vanilla and CPU-isolated Linux for nested KVM VMs
 
-This lab compares wake-up latency (we use ``cyclictest``) inside a nested KVM guest under CPU stress, using an OpenStack instance with a certain amount of vCPUs. In this example, we use **8 vCPUs**. This hands on aims at demonstrating whether isolating selected CPUs in the OpenStack instance reduces interference from ordinary background workloads.
+This lab compares wake-up latency (we use ``cyclictest``) inside a nested KVM guest under CPU stress, using an OpenStack instance with a certain number of vCPUs. The task cyclictest runs is a small measurement loop: sleep, wake up, read the clock, record how late it woke up, and repeat. In this example, we use **8 vCPUs**, but adjust this example according to the vCPUs you assigned to your VM. This hands-on aims to demonstrate whether isolating selected CPUs in the OpenStack instance reduces interference from ordinary background workloads.
 
 ## 1. Execution levels and controlled comparison
 
