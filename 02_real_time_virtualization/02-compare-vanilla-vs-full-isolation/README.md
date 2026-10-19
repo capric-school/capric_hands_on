@@ -13,7 +13,7 @@ Unless explicitly labeled **L2**, commands run in **L1**.
 | Setting | Vanilla | Isolation configuration |
 | --- | --- | --- |
 | L2 QEMU vCPU thread | Pinned to L1 CPU 1 | Pinned to L1 CPU 1 |
-| L2 Other QEMU threads | Allowed on L1 CPUs 0,2–7 | Allowed on L1 CPUs 0,2–7 |
+| L2 Other QEMU threads | Allowed on L1 CPUs 0–7 | Allowed on L1 CPUs 0–7 |
 | L1 Background stress | Eight unpinned CPU workers | Eight unpinned CPU workers |
 | Isolated CPUs | None | L1 CPUs 1 |
 | Additional boot options | None | `nohz_full=1 isolcpus=1 rcu_nocbs=1 irqaffinity=0,2-7` |
@@ -172,7 +172,6 @@ TID PSR COMMAND
 $ VCPU_TID=$(ps -T -p "$PID" -o tid,comm | awk '/CPU 0\/KVM/ {print $1}')
 $ printf 'QEMU PID=%s; vCPU TID=%s\n' "$PID" "$VCPU_TID"
 QEMU PID=11867; vCPU TID=11871
-
 ```
 
 Confirm that there is exactly one matching QEMU process and one `CPU 0/KVM` thread. If the TID is empty, inspect the names above rather than continuing.
@@ -226,7 +225,7 @@ Because QEMU uses `snapshot=on`, guest filesystem changes are discarded at shutd
 
 ## 6. Collect results for baseline and stress-induced experiments
 
-For each boot configuration, take a no-stress baseline and measurements with stress induced (statistical significance can be achieved with multiple runs). Use the same quiet period after guest startup and finish package installation before collecting data. Avoid unrelated jobs during the experiment.
+For each boot configuration, take a no-stress baseline and measurements with stress induced (repeat measurements to assess variability; multiple runs alone do not establish statistical significance). Use the same quiet period after guest startup and finish package installation before collecting data. Avoid unrelated jobs during the experiment.
 
 In **L1 terminal B**, set a label matching the boot configuration:
 
