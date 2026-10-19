@@ -321,9 +321,9 @@ These are user-observed single 60-second runs with eight unpinned CPU workers in
 
 The observed maximum decreased by approximately 73.3% (3.75 times lower), while the average increased from 80 to 154 µs. A defensible statement is:
 
-> In this pair of runs, the CPU-isolation configuration reduced the largest observed L2 wake-up delay under background CPU stress, while average latency increased. Repeated trials are needed to assess consistency.
+Why could an isolation-based scenario have a higher average? With stress excluded from CPU 1, both L2 and the underlying L1 vCPU may become idle. If L1 blocks rather than continuing to poll, a subsequent wake-up can require L0 to schedule it again before L1 can resume L2. KVM’s halt-polling mechanism exists specifically to avoid some of this block-and-reschedule latency. However, stress can also delay L2’s vCPU in vanilla: keeping L1 active does not guarantee prompt dispatch of L2. That could produce a pattern of many short wake-ups plus occasional large contention delays.
 
-Do not infer a guaranteed latency bound or attribute the change solely to `isolcpus`. L0 can still deschedule L1, and different L1 vCPUs are not necessarily dedicated physical cores. Shared caches, memory bandwidth, interrupt activity, and QEMU emulator scheduling can still matter. The result may differ on another OpenStack host.
+Measurements in an OpenStack (nested) environment can be consistent with this hypothesis, but do not prove it. In particular, isolation does not necessarily make L1 block—other work and halt polling matter—and “L1 idle” does not necessarily mean the physical processor entered a deep sleep state. Do not infer a guaranteed latency bound or attribute the change solely to `isolcpus`. L0 can still deschedule L1, and different L1 vCPUs are not necessarily dedicated physical cores. Shared caches, memory bandwidth, interrupt activity, and QEMU emulator scheduling can still matter. The result may differ on another OpenStack host.
 
 ## 9. Optional follow-up experiments
 
