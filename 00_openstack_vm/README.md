@@ -39,7 +39,7 @@ You can now give it a description and limit it to a specific subnet/machine if y
 
 ## Setting up network
 
-We recommend creating your own network, so that all your VM:s can communicate with each other on a "local" network and anything internet-facing will have a "floating-ip" instead (basically a 1:1 NAT setup). However, to speed up the lab, you can reuse the already created network named ``internet`` and jump directly to ``Creating a VM``section.
+We recommend creating your own network, so that all your VM:s can communicate with each other on a "local" network and anything internet-facing will have a "floating-ip" instead (basically a 1:1 NAT setup). However, to speed up the lab, you can reuse the already created network named ``internet`` and jump directly to [Creating a VM](#creating-a-vm) section.
 
 There are also security groups, these can be used to limit the interactions different machines can have with each other.
 
