@@ -168,3 +168,14 @@ After enabling PREEMPT_RT, try to repeat the latency tests as done above.
 
 Many guides are available on how to properly configure the kernel to avoid latency killers, such as this guideline for x86 machines: https://v3.xenomai.org/tips/x86/common/
 
+### 5. Outputs
+Provide the cyclictest outputs in the different configurations in terms of:
+- scheduling algorithms;
+- stress (yes/no, but you can also try different types of stress);
+- preemption (optional).
+
+Create a folder with your username under the ```assignments``` folder on the Shared OneDrive.
+
+Then, create a folder with the lab ID, ```01_rtlinux``` for this one.
+
+Put the files (or a .zip file) in that folder.
