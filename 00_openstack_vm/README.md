@@ -33,7 +33,7 @@ You now have a choice of modifying "default" or creating a new security group. M
 
 Click on "Create Security Group" and give it a name, in our case, "ssh".
 
-The egress (output) rules that it adds are already part of "default" so you can remove them if you want to. Click on "Add Rule", select the "Rule" by clicking on "Custom TCP Rule" and select SSH at the bottom of the list (Openstak will add both ingress and egress rules for SSH).
+The egress (output) rules that it adds are already part of "default" so you can remove them if you want to. Click on "Add Rule", select the "Rule" by clicking on "Custom TCP Rule" and select SSH at the bottom of the list (Openstak will add only ingress rule, so you should add explicitely the egress rule).
 
 You can now give it a description and limit it to a specific subnet/machine if you want to, and then click "Add"
 
