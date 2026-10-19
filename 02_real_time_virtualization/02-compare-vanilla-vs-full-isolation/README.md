@@ -13,10 +13,10 @@ Unless explicitly labeled **L2**, commands run in **L1**.
 | Setting | Vanilla | Isolation configuration |
 | --- | --- | --- |
 | L2 QEMU vCPU thread | Pinned to L1 CPU 1 | Pinned to L1 CPU 1 |
-| L2 Other QEMU threads | Allowed on L1 CPUs 0,4–7 | Allowed on L1 CPUs 0,4–7 |
+| L2 Other QEMU threads | Allowed on L1 CPUs 0,2–7 | Allowed on L1 CPUs 0,2–7 |
 | L1 Background stress | Eight unpinned CPU workers | Eight unpinned CPU workers |
-| Isolated CPUs | None | L1 CPUs 1–3 |
-| Additional boot options | None | `nohz_full=1-3 isolcpus=1-3 rcu_nocbs=1-3 irqaffinity=0,4-7` |
+| Isolated CPUs | None | L1 CPUs 1 |
+| Additional boot options | None | `nohz_full=1 isolcpus=1 rcu_nocbs=1 irqaffinity=0,2-7` |
 | Measurement | Same 60-second cyclictest command | Same 60-second cyclictest command |
 
 Keep the instance flavor, kernel version, guest image, QEMU options, thread placement, and measurement duration unchanged. Do not apply real-time scheduling to QEMU's vCPU thread during this comparison.
@@ -87,10 +87,10 @@ We want to enable the following kernel options:
 
 | Option | Effect within L1 |
 | --- | --- |
-| `isolcpus=1-3` | Excludes these CPUs from normal scheduler load balancing |
-| `nohz_full=1-3` | Suppresses scheduling ticks when eligible; it does not eliminate every interrupt |
-| `rcu_nocbs=1-3` | Offloads RCU callback processing from these CPUs |
-| `irqaffinity=0,4-7` | Sets default IRQ affinity; drivers and irqbalance can affect actual placement |
+| `isolcpus=1` | Excludes these CPUs from normal scheduler load balancing |
+| `nohz_full=1` | Suppresses scheduling ticks when eligible; it does not eliminate every interrupt |
+| `rcu_nocbs=1` | Offloads RCU callback processing from these CPUs |
+| `irqaffinity=0,2-7` | Sets default IRQ affinity; drivers and irqbalance can affect actual placement |
 
 These settings neither configure physical-host isolation nor turn the guest kernel into PREEMPT_RT.
 
@@ -99,7 +99,7 @@ Start from the cleaned configuration above. Ubuntu cloud images can override `/e
 
 ```bash
 sudo tee /etc/default/grub.d/99-lab-isolation.cfg >/dev/null <<'EOF'
-GRUB_CMDLINE_LINUX_DEFAULT="${GRUB_CMDLINE_LINUX_DEFAULT} nohz_full=1-3 isolcpus=1-3 rcu_nocbs=1-3 irqaffinity=0,4-7"
+GRUB_CMDLINE_LINUX_DEFAULT="${GRUB_CMDLINE_LINUX_DEFAULT} nohz_full=1 isolcpus=1 rcu_nocbs=1 irqaffinity=0,2-7"
 EOF
 
 sudo update-grub
@@ -120,7 +120,7 @@ cat /sys/devices/system/cpu/isolated
 cat /sys/devices/system/cpu/nohz_full
 ```
 
-The last two should show `1-3`. If not, inspect kernel configuration and boot messages before measuring:
+The last two should show `1`. If not, inspect kernel configuration and boot messages before measuring:
 
 ```bash
 grep -E '^CONFIG_(NO_HZ_FULL|RCU_NOCB_CPU)=' /boot/config-$(uname -r)
@@ -133,7 +133,7 @@ sudo dmesg | grep -Ei 'nohz|rcu|isolat'
 Ensure port 2222 is free and an earlier copy of the lab VM is not running. In **L1 terminal A**:
 
 ```bash
-taskset -c 0,4-7 qemu-system-x86_64 \
+taskset -c 0-7 qemu-system-x86_64 \
   -enable-kvm -cpu host -smp 1 -m 1G \
   -drive file="$HOME/kvm-demo/debian-base.qcow2",if=virtio,snapshot=on \
   -netdev user,id=n0,hostfwd=tcp:127.0.0.1:2222-:22 \
@@ -142,7 +142,7 @@ taskset -c 0,4-7 qemu-system-x86_64 \
   -name isolation-demo,debug-threads=on
 ```
 
-Initially **all QEMU threads** inherit `0,4-7`, including the vCPU thread. In **L1 terminal B**, find and move only the vCPU thread:
+Initially **all QEMU threads** inherit `0-7`, including the vCPU thread. In **L1 terminal B**, find and move only the vCPU thread:
 
 ```bash
 $ PID=$(pgrep -n -f 'qemu-system-x86_64.*isolation-demo')
@@ -179,21 +179,21 @@ Confirm that there is exactly one matching QEMU process and one `CPU 0/KVM` thre
 
 ```bash
 $ sudo taskset -pc 1 "$VCPU_TID"
-pid 11871's current affinity list: 0,4-7
+pid 11871's current affinity list: 0-7
 pid 11871's new affinity list: 1
 
 $ taskset -apc "$PID"
-pid 11867's current affinity list: 0,4-7
-pid 11868's current affinity list: 0,4-7
+pid 11867's current affinity list: 0-7
+pid 11868's current affinity list: 0-7
 pid 11871's current affinity list: 1
-pid 11873's current affinity list: 0,4-7
+pid 11873's current affinity list: 0-7
 
 $ chrt -p "$VCPU_TID"
 pid 11871's current scheduling policy: SCHED_OTHER
 pid 11871's current scheduling priority: 0
 ```
 
-Expect vCPU affinity `1`, other QEMU thread affinities `0,4-7`, and the vCPU scheduling policy `SCHED_OTHER`. Repeat this step after every QEMU restart: thread IDs change.
+Expect vCPU affinity `1`, other QEMU thread affinities `0-7`, and the vCPU scheduling policy `SCHED_OTHER`. Repeat this step after every QEMU restart: thread IDs change.
 
 ## 5. Prepare the measurement
 
@@ -272,13 +272,13 @@ Do an initial verification run in each configuration. Avoid extra monitoring in 
 watch -n 0.5 'ps -eLo pid,tid,psr,comm | grep "[s]tress-ng"'
 ```
 
-`PSR` is the CPU on which a thread most recently executed, not its allowed affinity mask. In the isolated setup, ordinarily launched stress workers should appear on `0,4,5,6,7`, not `1,2,3`. Inspect several refreshes; this is sampling, not proof of every scheduling event.
+`PSR` is the CPU on which a thread most recently executed, not its allowed affinity mask. In the isolated setup, ordinarily launched stress workers should appear on `0,2,3,4,5,6,7`, not `1`. Inspect several refreshes; this is sampling, not proof of every scheduling event.
 
 ```bash
 mpstat -P ALL 1
 ```
 
-In the isolated configuration, expect the housekeeping CPUs to be busy, CPU 1 to execute the nested vCPU intermittently, and CPUs 2–3 to be mostly idle unless explicitly assigned work. CPU 1 need not reach 100% because cyclictest mostly sleeps. `%steal`, when reported, can indicate time denied by L0; a zero reading does not establish the absence of host interference.
+In the isolated configuration, expect the housekeeping CPUs to be busy, CPU 1 to execute the nested vCPU intermittently. CPU 1 need not reach 100% because cyclictest mostly sleeps. `%steal`, when reported, can indicate time denied by L0; a zero reading does not establish the absence of host interference.
 
 If stress appears on isolated CPUs, inspect the launching shell's affinity and worker masks:
 
@@ -327,7 +327,7 @@ Measurements in an OpenStack (nested) environment can be consistent with this hy
 
 ## 9. Optional follow-up experiments
 
-**Isolate the effect of isolcpus:** add a third boot configuration with only `isolcpus=1-3`, keeping the same QEMU placement and unpinned stress. Compare vanilla, isolcpus-only, and the full bundle. This does not separately identify every parameter's contribution.
+**Isolate the effect of isolcpus:** add a third boot configuration with only `isolcpus=1`, keeping the same QEMU placement and unpinned stress. Compare vanilla, isolcpus-only, and the full bundle. This does not separately identify every parameter's contribution.
 
 **Demonstrate deliberate contention:** under one fixed boot configuration, compare one stress worker pinned to CPU 1 with one pinned to CPU 4:
 
