@@ -1,0 +1,19 @@
+{
+  "tasks": {
+    "motore_asse_x": {
+      "policy": "SCHED_FIFO",
+      "priority": 90,
+      "cpus": [1],
+      "loop": -1,
+      "run": 2000,
+      "timer": {
+        "ref": "unique",
+        "period": 5000
+      }
+    }
+  },
+  "global": {
+    "duration": 60,
+    "logdir": "./"
+  }
+}
