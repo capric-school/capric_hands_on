@@ -178,6 +178,6 @@ Provide the cyclictest outputs in the different configurations in terms of:
 
 Create a folder with your username under the ```assignments``` folder on the Shared OneDrive.
 
-Then, create a folder with the lab ID, ```02_rtlinux``` for this one.
+Then, create a folder with the lab ID, ```01_rtlinux``` for this one.
 
 Put the files (or a .zip file) in that folder.
