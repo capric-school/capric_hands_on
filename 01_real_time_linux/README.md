@@ -128,7 +128,7 @@ Note that the above command will run stress-ng for 1 hour, and will log the resu
 ### 3. Configure a CPU to be used in full isolation
 Using Linux boot parameters, it is possible to *fully isolate* one or more CPUs from the scheduler and kernel noise. This helps to run a group of critical tasks in isolation.
 
-Edit the ```/etc/default/grub``` or ```sudo vi /etc/default/grub.d/50-cloudimg-settings.cfg``` (in case of OS cloud images as in OpenStack) file and add the following options to the ```GRUB_CMDLINE_LINUX_DEFAULT```:
+Edit the ```/etc/default/grub``` (or ```/etc/default/grub.d/50-cloudimg-settings.cfg```, in case of OS cloud images as in OpenStack) file and add the following options to the ```GRUB_CMDLINE_LINUX_DEFAULT```:
 - **isolcpus=X,Y**: The isolcpus kernel option can be used to specify a set of CPUs (e.g., X and Y) to be isolated from scheduler choices;
 - **nohz_full=X,Y**: Kernel needs to do work to maintain its internal state and services, and tick-based service generates noise for latency sensitive workloads. The nohz_full option enables tickless mode for the indicated CPUs (e.g., X and Y);
 - **rcu_nocbs=X,Y**: RCU callbacks are invoked in softirq context. These callbacks often free memory, and the memory allocators can therefore impose large latencies. With the rcu_nocbs option, we can tell the kernel not to select the indicated CPUs (e.g., X and Y) for RCU callbacks;
