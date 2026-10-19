@@ -221,7 +221,7 @@ Expect KVM to generally complete CPU-intensive work faster, but report measured 
 
 For a stronger comparison, repeat complete sessions in alternating order (KVM, TCG, KVM, TCG), using distinct filenames such as `kvm-2.txt` and `tcg-2.txt`. Five runs within one session do not capture all between-session variability.
 
-## Optional observation — QEMU CPU usage
+## Observation on QEMU CPU usage
 
 While the guest benchmark is running, in another **L1 terminal**:
 
