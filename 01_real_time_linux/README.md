@@ -12,9 +12,9 @@ In this lab you will learn:
 
 ### 0. Prerequisites
 This lab activity requires a Linux host.
-You can use your own Linux machine, or local VM, or you can create a VM on the Ericsson Openstack environment, following this tutorial:
+You can use your own Linux machine, or local VM, or you can create a VM on the Ericsson Openstack environment, following the tutorial:
 
-https://erdc.ericsson.net/Openstack_Tutorial
+https://github.com/capric-school/capric_hands_on/tree/main/00_openstack_vm
 
 To run real-time benchmarks on your host, install the rt-test utilities with:
 
@@ -101,7 +101,7 @@ Latencies: Min:      17 Act:     495    Avg:811.832500	Max:    1678
 ```
 And now with SCHED_DEADLINE with runtime 1ms, period and deadline 5ms:
 ```
-sudo chrt -d -T 1000000 -P 5000000 -D 5000000 0 ./latency 
+$ sudo chrt -d -T 1000000 -P 5000000 -D 5000000 0 ./latency 
 Latencies: Min:      27 Act:     929    Avg:868.150000	Max:    1259
 Latencies: Min:      23 Act:    1126    Avg:843.020000	Max:    1301
 Latencies: Min:      19 Act:     691    Avg:842.036667	Max:    1301
@@ -123,7 +123,7 @@ To answer, try to repeat the tests by running a stress workload in parallel (fro
 ```
 $ sudo stress-ng --cyclic 1 --cyclic-dist 250 --cyclic-method clock_ns --cyclic-policy rr -t 3600 --log-file cyclic-stress.log --verbose
 ```
-Note that the above command will run the stress-ng for 1 hour, and will log the results in the file cyclic-stress.log. The --cyclic-dist option specifies the distribution of the sleep times, and the --cyclic-method option specifies the method to use for the cyclic stress. The --cyclic-policy option specifies the scheduling policy to use for the cyclic stress.
+Note that the above command will run the stress-ng for 1 hour, and will log the results in the file ```cyclic-stress.log```. The ```--cyclic-dist``` option specifies the distribution of the sleep times, and the ```--cyclic-method``` option specifies the method to use for the cyclic stress. The ```--cyclic-policy``` option specifies the scheduling policy to use for the cyclic stress.
 
 ### 3. Configure a CPU to be used in full isolation
 Using Linux boot parameters, it is possible to *fully isolate* one or more CPUs from the scheduler and kernel noise. This helps to run a group of critical tasks in isolation.
