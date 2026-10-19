@@ -1,0 +1,48 @@
+# --- background-noise.yaml ---
+# Generates background CPU load on the NON-real-time nodes (capri-2..capri-5)
+# so the baseline exercises (1-3) are measured on busy nodes rather than idle
+# ones, which is more realistic. Deployed as a DaemonSet so one noise pod runs
+# on every matching node.
+#
+# It is intentionally BestEffort (no resource requests/limits) so it competes
+# for the shared CPU pool but is the first to be throttled/evicted under
+# pressure — it should not starve the lab workloads, just add realistic jitter.
+#
+# Deploy once at the start of Part 1, and delete it when you are done.
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: background-noise
+  labels:
+    app: background-noise
+spec:
+  selector:
+    matchLabels:
+      app: background-noise
+  template:
+    metadata:
+      labels:
+        app: background-noise
+    spec:
+      # Only run on the non-real-time nodes (no policy=rt label).
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: policy
+                operator: DoesNotExist
+      # Tolerate the control-plane taint so it lands on these nodes
+      # (all capri nodes are control-plane + worker).
+      tolerations:
+        - operator: Exists
+      containers:
+        - name: noise
+          image: 172.16.0.218:5000/pingpong:v3
+          imagePullPolicy: IfNotPresent
+          command:
+            - /bin/sh
+            - -c
+          # Run 4 busy CPU loops to keep the node's shared cores occupied.
+          args:
+            - "for i in 1 2 3 4; do while true; do :; done & done; wait"

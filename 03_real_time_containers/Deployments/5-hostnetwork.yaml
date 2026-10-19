@@ -1,0 +1,107 @@
+# --- server-deployment.yaml ---
+# This manifest defines a Kubernetes pod for the UDP server.
+#
+# CONCURRENT USE: this exercise uses hostNetwork, so the server binds the port
+# directly on the node (capri-6). Only ONE process can bind a given UDP port per
+# node, so if several groups run this at once you MUST each pick a UNIQUE port.
+# Change every "5000" below (server args, containerPort, and the client args at
+# the bottom) to the same unique value in the range 5000-5999 (e.g. use 5000 +
+# your group number: group 7 -> 5007). All three must match.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: udpserver
+  labels:
+    app: udpserver
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: udpserver
+  template:
+    metadata:
+      labels:
+        app: udpserver
+    spec:
+      hostNetwork: true
+      nodeName: capri-6
+      # Toleration: capri-6 and capri-7 carry the taint
+      #   rt-workload=true:NoSchedule
+      # This pod pins itself with nodeName, which bypasses the scheduler, so a
+      # NoSchedule taint would not actually block it. The toleration is here so
+      # every real-time exercise declares its intent the same way.
+      tolerations:
+      - { key: rt-workload, operator: Exists, effect: NoSchedule }
+      terminationGracePeriodSeconds: 5
+      containers:
+      - name: udpserver
+        image: 172.16.0.218:5000/pingpong:v3
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 5000
+          protocol: UDP
+        command:
+          - /bin/sh
+          - -c
+        args:
+          - exec chrt -f 1 ./udpserver 5000 rt busy
+        resources:
+          requests:
+            cpu: "1"
+            memory: "1Gi"
+          limits:
+            cpu: "1"
+            memory: "1Gi"
+        securityContext:
+          capabilities:
+            add: ["SYS_NICE"]
+---
+# --- client-deployment.yaml ---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: udpclient
+  labels:
+    app: udpclient
+spec:
+  # Safety net: the udpclient blocks in recvfrom() with no timeout, so if a
+  # single UDP datagram is lost in the overlay the client would wait forever.
+  # This bounds the run instead of hanging the exercise. A normal run finishes
+  # in about 90 seconds, but a pod may also sit Pending here waiting for a free
+  # exclusive core, and that waiting counts too - hence the wider margin.
+  activeDeadlineSeconds: 480
+  template:
+    metadata:
+      labels:
+        app: udpclient
+    spec:
+      nodeName: capri-7
+      restartPolicy: Never
+      hostNetwork: true
+      # Toleration: capri-6 and capri-7 carry the taint
+      #   rt-workload=true:NoSchedule
+      # This pod pins itself with nodeName, which bypasses the scheduler, so a
+      # NoSchedule taint would not actually block it. The toleration is here so
+      # every real-time exercise declares its intent the same way.
+      tolerations:
+      - { key: rt-workload, operator: Exists, effect: NoSchedule }
+      terminationGracePeriodSeconds: 5
+      containers:
+        - name: udpclient
+          imagePullPolicy: IfNotPresent
+          image: 172.16.0.218:5000/pingpong:v3
+          command:
+            - /bin/sh
+            - -c
+          args:
+            - sleep 30; exec chrt -f 1 ./udpclient 172.16.0.147 5000 100000 rt busy
+          resources:
+            requests:
+              cpu: "1"      # Requests 1 full CPU core
+              memory: "1Gi"  # Requests 1 GiB of memory
+            limits:
+              cpu: "1"      # Limits CPU usage to 1 core
+              memory: "1Gi"  # Limits memory usage to 1 GiB
+          securityContext:
+            capabilities:
+              add: ["SYS_NICE"]

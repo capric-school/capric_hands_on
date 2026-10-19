@@ -1,0 +1,146 @@
+# --- server-deployment.yaml ---
+# This manifest defines a Kubernetes pod for the UDP server.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: udpserver
+  labels:
+    app: udpserver
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: udpserver
+  template:
+    metadata:
+      labels:
+        app: udpserver
+    spec:
+      affinity:
+        # Node Affinity: REQUIRED to deploy ONLY on nodes with policy=rt
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: policy
+                operator: In
+                values:
+                - rt
+        
+        # Pod Anti-Affinity: keep the server off any node already running the client
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                app: udpclient
+            topologyKey: "kubernetes.io/hostname"
+      # Toleration: capri-6 and capri-7 carry the taint
+      #   rt-workload=true:NoSchedule
+      # which fences ordinary pods OFF the real-time nodes. The policy=rt
+      # label above is the PULL; this toleration is what gets us through
+      # the fence. You need BOTH.
+      tolerations:
+      - { key: rt-workload, operator: Exists, effect: NoSchedule }
+      terminationGracePeriodSeconds: 5
+      containers:
+      - name: udpserver
+        image: 172.16.0.218:5000/pingpong:v3
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 5000
+          protocol: UDP
+        command:
+          - /bin/sh
+          - -c
+        args:
+          - exec chrt -f 1 ./udpserver 5000 rt busy
+        resources:
+          requests:
+            cpu: "1"
+            memory: "1Gi"
+          limits:
+            cpu: "1"
+            memory: "1Gi"
+        securityContext:
+          capabilities:
+            add: ["SYS_NICE"]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: udpserver-service
+spec:
+  selector:
+    app: udpserver
+  ports:
+  - protocol: UDP
+    port: 5000
+    targetPort: 5000
+  type: ClusterIP
+
+---
+# --- client-deployment.yaml ---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: udpclient
+  labels:
+    app: udpclient
+spec:
+  # Safety net: the udpclient blocks in recvfrom() with no timeout, so if a
+  # single UDP datagram is lost in the overlay the client would wait forever.
+  # This bounds the run instead of hanging the exercise. A normal run finishes
+  # in about 90 seconds, but a pod may also sit Pending here waiting for a free
+  # exclusive core, and that waiting counts too - hence the wider margin.
+  activeDeadlineSeconds: 480
+  template:
+    metadata:
+      labels:
+        app: udpclient
+    spec:
+      affinity:
+        # Node Affinity: REQUIRED to deploy ONLY on nodes with policy=rt
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: policy
+                operator: In
+                values:
+                - rt
+        
+        # Pod Anti-Affinity: keep the client off the same node as the server
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                app: udpserver
+            topologyKey: "kubernetes.io/hostname"
+      restartPolicy: Never
+      # Toleration: capri-6 and capri-7 carry the taint
+      #   rt-workload=true:NoSchedule
+      # which fences ordinary pods OFF the real-time nodes. The policy=rt
+      # label above is the PULL; this toleration is what gets us through
+      # the fence. You need BOTH.
+      tolerations:
+      - { key: rt-workload, operator: Exists, effect: NoSchedule }
+      terminationGracePeriodSeconds: 5
+      containers:
+        - name: udpclient
+          imagePullPolicy: IfNotPresent
+          image: 172.16.0.218:5000/pingpong:v3
+          command:
+            - /bin/sh
+            - -c
+          args:
+            - sleep 30; exec chrt -f 1 ./udpclient udpserver-service 5000 100000 rt busy
+          resources:
+            requests:
+              cpu: "1"      # Requests 1 full CPU core
+              memory: "1Gi"  # Requests 1 GiB of memory
+            limits:
+              cpu: "1"      # Limits CPU usage to 1 core
+              memory: "1Gi"  # Limits memory usage to 1 GiB
+          securityContext:
+            capabilities:
+              add: ["SYS_NICE"]

@@ -1,0 +1,93 @@
+# --- server-deployment.yaml ---
+# This manifest defines a Kubernetes pod for the UDP server.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: udpserver
+  labels:
+    app: udpserver
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: udpserver
+  template:
+    metadata:
+      labels:
+        app: udpserver
+    spec:
+      # Placement: capri-6 and capri-7 carry the taint
+      #   rt-workload=true:NoSchedule
+      # and this pod has no matching toleration, so the scheduler cannot put it
+      # on a real-time node. That taint is what keeps Exercises 1-3 on the busy,
+      # untuned nodes (capri-2..capri-5).
+      containers:
+      - name: udpserver
+        image: 172.16.0.218:5000/pingpong:v3
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 5000
+          protocol: UDP
+        command:
+          - /bin/sh
+          - -c
+        args:
+          - ./udpserver 5000
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: udpserver-service
+spec:
+  selector:
+    app: udpserver
+  ports:
+  - protocol: UDP
+    port: 5000
+    targetPort: 5000
+  type: ClusterIP
+
+---
+# --- client-deployment.yaml ---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: udpclient
+  labels:
+    app: udpclient
+spec:
+  # Safety net: the udpclient blocks in recvfrom() with no timeout, so if a
+  # single UDP datagram is lost in the overlay the client would wait forever.
+  # This bounds the run instead of hanging the exercise. A normal run finishes
+  # in about 90 seconds; exceeding this means a packet was lost - just re-run.
+  activeDeadlineSeconds: 300
+  template:
+    metadata:
+      labels:
+        app: udpclient
+    spec:
+      restartPolicy: Never
+      # Placement: capri-6 and capri-7 carry the taint
+      #   rt-workload=true:NoSchedule
+      # and this pod has no matching toleration, so the scheduler cannot put it
+      # on a real-time node. That taint is what keeps Exercises 1-3 on the busy,
+      # untuned nodes (capri-2..capri-5).
+      #
+      # Pod Anti-Affinity: keep the client off the same node as the server
+      # so we always measure cross-node latency.
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                app: udpserver
+            topologyKey: "kubernetes.io/hostname"
+      containers:
+        - name: udpclient
+          imagePullPolicy: IfNotPresent
+          image: 172.16.0.218:5000/pingpong:v3
+          command:
+            - /bin/sh
+            - -c
+          args:
+            - sleep 30; ./udpclient udpserver-service 5000 100000
