@@ -16,6 +16,8 @@ You can use your own Linux machine, a local VM, or you can create a VM on the Er
 
 https://github.com/capric-school/capric_hands_on/tree/main/00_openstack_vm
 
+We suggest using the OpenStack environment to create a 4-core VM.
+
 To run real-time benchmarks on your host, install the rt-test utilities with:
 
 ```
